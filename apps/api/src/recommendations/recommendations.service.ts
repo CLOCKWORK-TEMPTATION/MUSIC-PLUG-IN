@@ -142,16 +142,20 @@ export class RecommendationsService {
 
       let tracks = this.mapRowsToTracks(rows);
 
+<<<<<<< HEAD
       // استبعاد الأنواع التي وضعها المستخدم ضمن dislikedGenres
       if (profile?.dislikedGenres?.length) {
         tracks = tracks.filter((t) => !profile.dislikedGenres.includes(t.genre));
       }
 
+=======
+>>>>>>> 1b6bdb2805c388458020f1d6349167d0395585e6
       // Apply context-based ranking
       if (context) {
         tracks = this.rankByContext(tracks, context);
       }
 
+<<<<<<< HEAD
       // Interest Graph (Heuristic الآن، LLM لاحقًا)
       const interestGraphEnabled =
         (process.env.RECSYS_INTEREST_GRAPH_ENABLED || 'true').toLowerCase() === 'true';
@@ -178,6 +182,8 @@ export class RecommendationsService {
         tracks = this.reorderTracksByRerank(tracks, reranked);
       }
 
+=======
+>>>>>>> 1b6bdb2805c388458020f1d6349167d0395585e6
       return tracks;
     }
 
@@ -315,6 +321,7 @@ export class RecommendationsService {
     }));
   }
 
+<<<<<<< HEAD
   private applyInterestGraphFilters(tracks: Track[], interestGraph: any): Track[] {
     const avoidArtists: Record<string, number> = interestGraph?.avoidArtists || {};
     const avoidGenres: Record<string, number> = interestGraph?.avoidGenres || {};
@@ -372,6 +379,8 @@ export class RecommendationsService {
     return ordered;
   }
 
+=======
+>>>>>>> 1b6bdb2805c388458020f1d6349167d0395585e6
   async invalidateCache(externalUserId: string): Promise<void> {
     await this.redis.flushPattern(`recommendations:${externalUserId}:*`);
     this.logger.debug(`Cache invalidated for user ${externalUserId}`);
