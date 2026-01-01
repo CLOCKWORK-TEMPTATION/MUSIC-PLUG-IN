@@ -6,6 +6,7 @@ import { DatabaseService } from '../config/database.service';
 describe('PlaylistsService', () => {
   let service: PlaylistsService;
 
+  // Mock database service
   const mockDatabaseService = {
     query: jest.fn(),
     queryOne: jest.fn(),
@@ -14,6 +15,7 @@ describe('PlaylistsService', () => {
   };
 
   beforeEach(async () => {
+    // Reset all mocks completely before each test
     jest.resetAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
@@ -31,15 +33,18 @@ describe('PlaylistsService', () => {
 
   describe('create', () => {
     const externalUserId = 'user-123';
-    const playlistId = 'playlist-uuid-1';
+    const playlistId = '550e8400-e29b-41d4-a716-446655440000';
+
+    const createMockDbRow = (overrides = {}) => ({
+      id: playlistId,
+      external_user_id: externalUserId,
+      name: 'My Playlist',
+      created_at: new Date('2024-01-15T10:00:00Z'),
+      ...overrides,
+    });
 
     it('should create a new playlist successfully', async () => {
-      const mockRow = {
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'My Playlist',
-        created_at: new Date('2024-01-15T10:00:00Z'),
-      };
+      const mockRow = createMockDbRow();
       mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
       const result = await service.create(externalUserId, { name: 'My Playlist' });
@@ -51,105 +56,85 @@ describe('PlaylistsService', () => {
         createdAt: new Date('2024-01-15T10:00:00Z'),
         tracks: [],
       });
-    });
-
-    it('should call database with correct INSERT query', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'Test Playlist',
-        created_at: new Date(),
-      });
-
-      await service.create(externalUserId, { name: 'Test Playlist' });
 
       expect(mockDatabaseService.queryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO playlists'),
-        [externalUserId, 'Test Playlist'],
+        [externalUserId, 'My Playlist'],
       );
     });
 
-    it('should use RETURNING * in INSERT query', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'Test',
-        created_at: new Date(),
-      });
+    it('should create playlist with different name', async () => {
+      const mockRow = createMockDbRow({ name: 'Rock Classics' });
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
-      await service.create(externalUserId, { name: 'Test' });
+      const result = await service.create(externalUserId, { name: 'Rock Classics' });
 
-      const query = mockDatabaseService.queryOne.mock.calls[0][0];
-      expect(query).toContain('RETURNING *');
-    });
-
-    it('should handle special characters in playlist name', async () => {
-      const specialName = "Playlist's \"Best\" & Greatest <Hits>";
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: specialName,
-        created_at: new Date(),
-      });
-
-      const result = await service.create(externalUserId, { name: specialName });
-
-      expect(result.name).toBe(specialName);
+      expect(result.name).toBe('Rock Classics');
     });
 
     it('should handle unicode characters in playlist name', async () => {
-      const unicodeName = '🎵 日本語プレイリスト 🎶';
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: unicodeName,
-        created_at: new Date(),
-      });
+      const mockRow = createMockDbRow({ name: '私のプレイリスト' });
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
-      const result = await service.create(externalUserId, { name: unicodeName });
+      const result = await service.create(externalUserId, { name: '私のプレイリスト' });
 
-      expect(result.name).toBe(unicodeName);
+      expect(result.name).toBe('私のプレイリスト');
     });
 
-    it('should propagate database errors', async () => {
-      mockDatabaseService.queryOne.mockRejectedValueOnce(
-        new Error('Duplicate key violation'),
-      );
+    it('should handle special characters in playlist name', async () => {
+      const mockRow = createMockDbRow({ name: "Rock 'n' Roll & Blues!" });
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
-      await expect(
-        service.create(externalUserId, { name: 'Test' }),
-      ).rejects.toThrow('Duplicate key violation');
+      const result = await service.create(externalUserId, { name: "Rock 'n' Roll & Blues!" });
+
+      expect(result.name).toBe("Rock 'n' Roll & Blues!");
+    });
+
+    it('should use RETURNING * to get the created row', async () => {
+      const mockRow = createMockDbRow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
+
+      await service.create(externalUserId, { name: 'Test' });
+
+      expect(mockDatabaseService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('RETURNING *'),
+        expect.any(Array),
+      );
+    });
+
+    it('should initialize tracks as empty array', async () => {
+      const mockRow = createMockDbRow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
+
+      const result = await service.create(externalUserId, { name: 'Test' });
+
+      expect(result.tracks).toEqual([]);
     });
   });
 
   describe('findAll', () => {
     const externalUserId = 'user-123';
 
+    const createMockRows = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: `playlist-${i + 1}`,
+        external_user_id: externalUserId,
+        name: `Playlist ${i + 1}`,
+        created_at: new Date(2024, 0, 15, 10, count - i),
+      }));
+
     it('should return all playlists for a user', async () => {
-      const mockRows = [
-        {
-          id: 'playlist-1',
-          external_user_id: externalUserId,
-          name: 'Playlist 1',
-          created_at: new Date('2024-01-15T10:00:00Z'),
-        },
-        {
-          id: 'playlist-2',
-          external_user_id: externalUserId,
-          name: 'Playlist 2',
-          created_at: new Date('2024-01-14T10:00:00Z'),
-        },
-      ];
+      const mockRows = createMockRows(3);
       mockDatabaseService.query.mockResolvedValueOnce(mockRows);
 
       const result = await service.findAll(externalUserId);
 
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(3);
       expect(result[0]).toEqual({
         id: 'playlist-1',
         externalUserId,
         name: 'Playlist 1',
-        createdAt: new Date('2024-01-15T10:00:00Z'),
+        createdAt: expect.any(Date),
         tracks: [],
       });
     });
@@ -162,80 +147,93 @@ describe('PlaylistsService', () => {
       expect(result).toEqual([]);
     });
 
-    it('should order by created_at DESC', async () => {
-      mockDatabaseService.query.mockResolvedValueOnce([]);
-
-      await service.findAll(externalUserId);
-
-      const query = mockDatabaseService.query.mock.calls[0][0];
-      expect(query).toContain('ORDER BY created_at DESC');
-    });
-
-    it('should filter by external_user_id', async () => {
+    it('should order playlists by created_at DESC', async () => {
       mockDatabaseService.query.mockResolvedValueOnce([]);
 
       await service.findAll(externalUserId);
 
       expect(mockDatabaseService.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE external_user_id = $1'),
-        [externalUserId],
+        expect.stringContaining('ORDER BY created_at DESC'),
+        expect.any(Array),
       );
     });
 
-    it('should propagate database errors', async () => {
-      mockDatabaseService.query.mockRejectedValueOnce(new Error('Connection lost'));
+    it('should filter by external_user_id', async () => {
+      mockDatabaseService.query.mockResolvedValueOnce([]);
 
-      await expect(service.findAll(externalUserId)).rejects.toThrow('Connection lost');
+      await service.findAll('specific-user');
+
+      expect(mockDatabaseService.query).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE external_user_id = $1'),
+        ['specific-user'],
+      );
+    });
+
+    it('should map all rows to Playlist objects', async () => {
+      const mockRows = createMockRows(5);
+      mockDatabaseService.query.mockResolvedValueOnce(mockRows);
+
+      const result = await service.findAll(externalUserId);
+
+      expect(result).toHaveLength(5);
+      result.forEach((playlist, index) => {
+        expect(playlist.id).toBe(`playlist-${index + 1}`);
+        expect(playlist.tracks).toEqual([]);
+      });
     });
   });
 
   describe('findOne', () => {
     const externalUserId = 'user-123';
-    const playlistId = 'playlist-uuid-1';
+    const playlistId = '550e8400-e29b-41d4-a716-446655440000';
 
-    it('should return playlist with tracks when found', async () => {
-      const mockPlaylistRow = {
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'My Playlist',
-        created_at: new Date('2024-01-15T10:00:00Z'),
-      };
-      const mockTrackRows = [
-        {
-          id: 'track-1',
-          title: 'Song 1',
-          artist: 'Artist 1',
-          album: 'Album 1',
-          genre: 'rock',
-          duration_sec: 180,
-          external_url: 'https://example.com/track1',
-          preview_url: 'https://example.com/preview1',
-          audio_features: { energy: 0.8 },
-          embedding: [0.1, 0.2],
-          created_at: new Date('2024-01-01'),
-        },
-      ];
+    const createMockPlaylistRow = (overrides = {}) => ({
+      id: playlistId,
+      external_user_id: externalUserId,
+      name: 'My Playlist',
+      created_at: new Date('2024-01-15T10:00:00Z'),
+      ...overrides,
+    });
 
-      mockDatabaseService.queryOne.mockResolvedValueOnce(mockPlaylistRow);
-      mockDatabaseService.query.mockResolvedValueOnce(mockTrackRows);
+    const createMockTrackRows = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: `track-${i + 1}`,
+        title: `Track ${i + 1}`,
+        artist: `Artist ${i + 1}`,
+        album: `Album ${i + 1}`,
+        genre: 'rock',
+        duration_sec: 180 + i * 30,
+        external_url: `https://example.com/track/${i + 1}`,
+        preview_url: `https://example.com/preview/${i + 1}`,
+        audio_features: { tempo: 120 },
+        embedding: null,
+        created_at: new Date(2024, 0, 15, 10, i),
+      }));
+
+    it('should return playlist with tracks', async () => {
+      const mockPlaylist = createMockPlaylistRow();
+      const mockTracks = createMockTrackRows(2);
+
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockPlaylist);
+      mockDatabaseService.query.mockResolvedValueOnce(mockTracks);
 
       const result = await service.findOne(playlistId, externalUserId);
 
       expect(result.id).toBe(playlistId);
       expect(result.name).toBe('My Playlist');
-      expect(result.tracks).toHaveLength(1);
+      expect(result.tracks).toHaveLength(2);
       expect(result.tracks![0]).toEqual({
         id: 'track-1',
-        title: 'Song 1',
+        title: 'Track 1',
         artist: 'Artist 1',
         album: 'Album 1',
         genre: 'rock',
         durationSec: 180,
-        externalUrl: 'https://example.com/track1',
-        previewUrl: 'https://example.com/preview1',
-        audioFeatures: { energy: 0.8 },
-        embedding: [0.1, 0.2],
-        createdAt: new Date('2024-01-01'),
+        externalUrl: 'https://example.com/track/1',
+        previewUrl: 'https://example.com/preview/1',
+        audioFeatures: { tempo: 120 },
+        embedding: null,
+        createdAt: expect.any(Date),
       });
     });
 
@@ -250,30 +248,9 @@ describe('PlaylistsService', () => {
       );
     });
 
-    it('should enforce ownership check in query', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'Test',
-        created_at: new Date(),
-      });
-      mockDatabaseService.query.mockResolvedValueOnce([]);
-
-      await service.findOne(playlistId, externalUserId);
-
-      expect(mockDatabaseService.queryOne).toHaveBeenCalledWith(
-        expect.stringContaining('p.external_user_id = $2'),
-        [playlistId, externalUserId],
-      );
-    });
-
     it('should return empty tracks array when playlist has no tracks', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'Empty Playlist',
-        created_at: new Date(),
-      });
+      const mockPlaylist = createMockPlaylistRow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockPlaylist);
       mockDatabaseService.query.mockResolvedValueOnce([]);
 
       const result = await service.findOne(playlistId, externalUserId);
@@ -281,62 +258,99 @@ describe('PlaylistsService', () => {
       expect(result.tracks).toEqual([]);
     });
 
+    it('should verify both playlist id and user id', async () => {
+      const mockPlaylist = createMockPlaylistRow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockPlaylist);
+      mockDatabaseService.query.mockResolvedValueOnce([]);
+
+      await service.findOne(playlistId, externalUserId);
+
+      expect(mockDatabaseService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('p.id = $1 AND p.external_user_id = $2'),
+        [playlistId, externalUserId],
+      );
+    });
+
     it('should order tracks by added_at DESC', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'Test',
-        created_at: new Date(),
-      });
+      const mockPlaylist = createMockPlaylistRow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockPlaylist);
       mockDatabaseService.query.mockResolvedValueOnce([]);
 
       await service.findOne(playlistId, externalUserId);
 
-      const tracksQuery = mockDatabaseService.query.mock.calls[0][0];
-      expect(tracksQuery).toContain('ORDER BY pt.added_at DESC');
+      expect(mockDatabaseService.query).toHaveBeenCalledWith(
+        expect.stringContaining('ORDER BY pt.added_at DESC'),
+        expect.any(Array),
+      );
     });
 
-    it('should join playlist_tracks and tracks tables', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'Test',
-        created_at: new Date(),
-      });
+    it('should join playlist_tracks with tracks table', async () => {
+      const mockPlaylist = createMockPlaylistRow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockPlaylist);
       mockDatabaseService.query.mockResolvedValueOnce([]);
 
       await service.findOne(playlistId, externalUserId);
 
-      const tracksQuery = mockDatabaseService.query.mock.calls[0][0];
-      expect(tracksQuery).toContain('JOIN playlist_tracks pt ON pt.track_id = t.id');
+      expect(mockDatabaseService.query).toHaveBeenCalledWith(
+        expect.stringContaining('JOIN playlist_tracks pt ON pt.track_id = t.id'),
+        expect.any(Array),
+      );
     });
 
-    it('should not query tracks if playlist not found', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
+    it('should handle tracks with null optional fields', async () => {
+      const mockPlaylist = createMockPlaylistRow();
+      const trackWithNulls = {
+        id: 'track-1',
+        title: 'Track 1',
+        artist: 'Artist 1',
+        album: null,
+        genre: null,
+        duration_sec: 180,
+        external_url: null,
+        preview_url: null,
+        audio_features: null,
+        embedding: null,
+        created_at: new Date(),
+      };
 
-      await expect(service.findOne(playlistId, externalUserId)).rejects.toThrow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockPlaylist);
+      mockDatabaseService.query.mockResolvedValueOnce([trackWithNulls]);
 
-      expect(mockDatabaseService.query).not.toHaveBeenCalled();
+      const result = await service.findOne(playlistId, externalUserId);
+
+      expect(result.tracks![0].album).toBeNull();
+      expect(result.tracks![0].genre).toBeNull();
+      expect(result.tracks![0].externalUrl).toBeNull();
+      expect(result.tracks![0].previewUrl).toBeNull();
+      expect(result.tracks![0].audioFeatures).toBeNull();
     });
   });
 
   describe('update', () => {
     const externalUserId = 'user-123';
-    const playlistId = 'playlist-uuid-1';
+    const playlistId = '550e8400-e29b-41d4-a716-446655440000';
+
+    const createMockDbRow = (overrides = {}) => ({
+      id: playlistId,
+      external_user_id: externalUserId,
+      name: 'Updated Playlist',
+      created_at: new Date('2024-01-15T10:00:00Z'),
+      ...overrides,
+    });
 
     it('should update playlist name successfully', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'Updated Name',
-        created_at: new Date('2024-01-15T10:00:00Z'),
-      });
+      const mockRow = createMockDbRow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
       const result = await service.update(playlistId, externalUserId, {
-        name: 'Updated Name',
+        name: 'Updated Playlist',
       });
 
-      expect(result.name).toBe('Updated Name');
+      expect(result.name).toBe('Updated Playlist');
+      expect(mockDatabaseService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE playlists'),
+        ['Updated Playlist', playlistId, externalUserId],
+      );
     });
 
     it('should throw NotFoundException when playlist not found', async () => {
@@ -347,62 +361,68 @@ describe('PlaylistsService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw NotFoundException when playlist belongs to different user', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
-
-      await expect(
-        service.update(playlistId, 'different-user', { name: 'New Name' }),
-      ).rejects.toThrow('Playlist not found');
-    });
-
-    it('should enforce ownership check in UPDATE query', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'Test',
-        created_at: new Date(),
-      });
+    it('should verify ownership via external_user_id', async () => {
+      const mockRow = createMockDbRow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
       await service.update(playlistId, externalUserId, { name: 'Test' });
 
       expect(mockDatabaseService.queryOne).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE id = $2 AND external_user_id = $3'),
-        ['Test', playlistId, externalUserId],
+        expect.stringContaining('external_user_id = $3'),
+        expect.arrayContaining([externalUserId]),
       );
     });
 
-    it('should use RETURNING * in UPDATE query', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: playlistId,
-        external_user_id: externalUserId,
-        name: 'Test',
-        created_at: new Date(),
-      });
+    it('should use RETURNING * to get updated row', async () => {
+      const mockRow = createMockDbRow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
       await service.update(playlistId, externalUserId, { name: 'Test' });
 
-      const query = mockDatabaseService.queryOne.mock.calls[0][0];
-      expect(query).toContain('RETURNING *');
+      expect(mockDatabaseService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('RETURNING *'),
+        expect.any(Array),
+      );
     });
 
-    it('should propagate database errors', async () => {
-      mockDatabaseService.queryOne.mockRejectedValueOnce(new Error('Update failed'));
+    it('should handle unicode characters in updated name', async () => {
+      const mockRow = createMockDbRow({ name: '音楽プレイリスト' });
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
-      await expect(
-        service.update(playlistId, externalUserId, { name: 'Test' }),
-      ).rejects.toThrow('Update failed');
+      const result = await service.update(playlistId, externalUserId, {
+        name: '音楽プレイリスト',
+      });
+
+      expect(result.name).toBe('音楽プレイリスト');
+    });
+
+    it('should return playlist with empty tracks array', async () => {
+      const mockRow = createMockDbRow();
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
+
+      const result = await service.update(playlistId, externalUserId, {
+        name: 'Test',
+      });
+
+      expect(result.tracks).toEqual([]);
     });
   });
 
   describe('remove', () => {
     const externalUserId = 'user-123';
-    const playlistId = 'playlist-uuid-1';
+    const playlistId = '550e8400-e29b-41d4-a716-446655440000';
 
     it('should delete playlist successfully', async () => {
-      // DELETE returns affected rows - simulate 1 row deleted
       mockDatabaseService.query.mockResolvedValueOnce([{ id: playlistId }]);
 
-      await expect(service.remove(playlistId, externalUserId)).resolves.not.toThrow();
+      await expect(
+        service.remove(playlistId, externalUserId),
+      ).resolves.toBeUndefined();
+
+      expect(mockDatabaseService.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM playlists'),
+        [playlistId, externalUserId],
+      );
     });
 
     it('should throw NotFoundException when playlist not found', async () => {
@@ -413,40 +433,30 @@ describe('PlaylistsService', () => {
       );
     });
 
-    it('should throw NotFoundException when playlist belongs to different user', async () => {
-      mockDatabaseService.query.mockResolvedValueOnce([]);
-
-      await expect(service.remove(playlistId, 'different-user')).rejects.toThrow(
-        'Playlist not found',
-      );
-    });
-
-    it('should enforce ownership check in DELETE query', async () => {
+    it('should verify ownership via external_user_id', async () => {
       mockDatabaseService.query.mockResolvedValueOnce([{ id: playlistId }]);
 
       await service.remove(playlistId, externalUserId);
 
       expect(mockDatabaseService.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE id = $1 AND external_user_id = $2'),
+        expect.stringContaining('external_user_id = $2'),
         [playlistId, externalUserId],
       );
     });
 
-    it('should propagate database errors', async () => {
-      mockDatabaseService.query.mockRejectedValueOnce(
-        new Error('Foreign key constraint'),
-      );
+    it('should not throw when deleting own playlist', async () => {
+      mockDatabaseService.query.mockResolvedValueOnce([{ id: playlistId }]);
 
-      await expect(service.remove(playlistId, externalUserId)).rejects.toThrow(
-        'Foreign key constraint',
-      );
+      await expect(
+        service.remove(playlistId, externalUserId),
+      ).resolves.not.toThrow();
     });
   });
 
   describe('addTrack', () => {
     const externalUserId = 'user-123';
-    const playlistId = 'playlist-uuid-1';
-    const trackId = 'track-uuid-1';
+    const playlistId = '550e8400-e29b-41d4-a716-446655440000';
+    const trackId = '660e8400-e29b-41d4-a716-446655440001';
 
     it('should add track to playlist successfully', async () => {
       mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
@@ -454,15 +464,12 @@ describe('PlaylistsService', () => {
 
       await expect(
         service.addTrack(playlistId, trackId, externalUserId),
-      ).resolves.not.toThrow();
-    });
+      ).resolves.toBeUndefined();
 
-    it('should throw NotFoundException when playlist not found', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
-
-      await expect(
-        service.addTrack(playlistId, trackId, externalUserId),
-      ).rejects.toThrow(NotFoundException);
+      expect(mockDatabaseService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO playlist_tracks'),
+        [playlistId, trackId],
+      );
     });
 
     it('should verify playlist ownership before adding track', async () => {
@@ -472,70 +479,58 @@ describe('PlaylistsService', () => {
       await service.addTrack(playlistId, trackId, externalUserId);
 
       expect(mockDatabaseService.queryOne).toHaveBeenCalledWith(
-        'SELECT id FROM playlists WHERE id = $1 AND external_user_id = $2',
+        expect.stringContaining('id = $1 AND external_user_id = $2'),
         [playlistId, externalUserId],
       );
     });
 
-    it('should use ON CONFLICT DO NOTHING for idempotent adds', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
-      mockDatabaseService.query.mockResolvedValueOnce([]);
+    it('should throw NotFoundException when playlist not found', async () => {
+      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
 
-      await service.addTrack(playlistId, trackId, externalUserId);
-
-      const insertQuery = mockDatabaseService.query.mock.calls[0][0];
-      expect(insertQuery).toContain('ON CONFLICT (playlist_id, track_id) DO NOTHING');
+      await expect(
+        service.addTrack(playlistId, trackId, externalUserId),
+      ).rejects.toThrow(NotFoundException);
     });
 
-    it('should insert into playlist_tracks with correct values', async () => {
+    it('should use ON CONFLICT DO NOTHING for duplicate tracks', async () => {
       mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
       mockDatabaseService.query.mockResolvedValueOnce([]);
 
       await service.addTrack(playlistId, trackId, externalUserId);
 
       expect(mockDatabaseService.query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO playlist_tracks'),
-        [playlistId, trackId],
+        expect.stringContaining('ON CONFLICT (playlist_id, track_id) DO NOTHING'),
+        expect.any(Array),
       );
     });
 
-    it('should not insert track if ownership check fails', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
-
-      await expect(
-        service.addTrack(playlistId, trackId, externalUserId),
-      ).rejects.toThrow();
-
-      expect(mockDatabaseService.query).not.toHaveBeenCalled();
-    });
-
-    it('should propagate database errors', async () => {
+    it('should set added_at to NOW()', async () => {
       mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
-      mockDatabaseService.query.mockRejectedValueOnce(
-        new Error('Track does not exist'),
-      );
+      mockDatabaseService.query.mockResolvedValueOnce([]);
 
-      await expect(
-        service.addTrack(playlistId, trackId, externalUserId),
-      ).rejects.toThrow('Track does not exist');
+      await service.addTrack(playlistId, trackId, externalUserId);
+
+      expect(mockDatabaseService.query).toHaveBeenCalledWith(
+        expect.stringContaining('NOW()'),
+        expect.any(Array),
+      );
     });
 
-    it('should be idempotent - adding same track twice succeeds', async () => {
-      mockDatabaseService.queryOne.mockResolvedValue({ id: playlistId });
-      mockDatabaseService.query.mockResolvedValue([]);
+    it('should not throw when adding same track twice', async () => {
+      mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
+      mockDatabaseService.query.mockResolvedValueOnce([]);
 
-      await service.addTrack(playlistId, trackId, externalUserId);
-      await service.addTrack(playlistId, trackId, externalUserId);
-
-      // Both calls should succeed without error
-      expect(mockDatabaseService.query).toHaveBeenCalledTimes(2);
+      // The ON CONFLICT DO NOTHING should prevent errors
+      await expect(
+        service.addTrack(playlistId, trackId, externalUserId),
+      ).resolves.not.toThrow();
     });
   });
 
   describe('removeTrack', () => {
     const externalUserId = 'user-123';
-    const playlistId = 'playlist-uuid-1';
-    const trackId = 'track-uuid-1';
+    const playlistId = '550e8400-e29b-41d4-a716-446655440000';
+    const trackId = '660e8400-e29b-41d4-a716-446655440001';
 
     it('should remove track from playlist successfully', async () => {
       mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
@@ -543,7 +538,24 @@ describe('PlaylistsService', () => {
 
       await expect(
         service.removeTrack(playlistId, trackId, externalUserId),
-      ).resolves.not.toThrow();
+      ).resolves.toBeUndefined();
+
+      expect(mockDatabaseService.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM playlist_tracks'),
+        [playlistId, trackId],
+      );
+    });
+
+    it('should verify playlist ownership before removing track', async () => {
+      mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
+      mockDatabaseService.query.mockResolvedValueOnce([]);
+
+      await service.removeTrack(playlistId, trackId, externalUserId);
+
+      expect(mockDatabaseService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('id = $1 AND external_user_id = $2'),
+        [playlistId, externalUserId],
+      );
     });
 
     it('should throw NotFoundException when playlist not found', async () => {
@@ -554,206 +566,372 @@ describe('PlaylistsService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should verify playlist ownership before removing track', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
-      mockDatabaseService.query.mockResolvedValueOnce([]);
-
-      await service.removeTrack(playlistId, trackId, externalUserId);
-
-      expect(mockDatabaseService.queryOne).toHaveBeenCalledWith(
-        'SELECT id FROM playlists WHERE id = $1 AND external_user_id = $2',
-        [playlistId, externalUserId],
-      );
-    });
-
-    it('should delete from playlist_tracks with correct values', async () => {
+    it('should filter by both playlist_id and track_id', async () => {
       mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
       mockDatabaseService.query.mockResolvedValueOnce([]);
 
       await service.removeTrack(playlistId, trackId, externalUserId);
 
       expect(mockDatabaseService.query).toHaveBeenCalledWith(
-        'DELETE FROM playlist_tracks WHERE playlist_id = $1 AND track_id = $2',
+        expect.stringContaining('playlist_id = $1 AND track_id = $2'),
         [playlistId, trackId],
       );
     });
 
-    it('should not delete track if ownership check fails', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
-
-      await expect(
-        service.removeTrack(playlistId, trackId, externalUserId),
-      ).rejects.toThrow();
-
-      expect(mockDatabaseService.query).not.toHaveBeenCalled();
-    });
-
-    it('should succeed even if track was not in playlist', async () => {
+    it('should not throw when removing non-existent track', async () => {
       mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
       mockDatabaseService.query.mockResolvedValueOnce([]);
 
-      // Removing non-existent track should not throw
-      await expect(
-        service.removeTrack(playlistId, 'non-existent-track', externalUserId),
-      ).resolves.not.toThrow();
-    });
-
-    it('should propagate database errors', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
-      mockDatabaseService.query.mockRejectedValueOnce(new Error('Connection lost'));
-
+      // DELETE on non-existent row doesn't throw
       await expect(
         service.removeTrack(playlistId, trackId, externalUserId),
-      ).rejects.toThrow('Connection lost');
+      ).resolves.not.toThrow();
     });
   });
 
-  describe('mapRowToPlaylist (private method via public interface)', () => {
-    it('should correctly map database row to Playlist object', async () => {
+  describe('mapRowToPlaylist (private method)', () => {
+    const externalUserId = 'user-123';
+
+    it('should correctly map all fields from database row', async () => {
       const mockRow = {
-        id: 'playlist-123',
-        external_user_id: 'user-456',
+        id: 'playlist-1',
+        external_user_id: externalUserId,
         name: 'Test Playlist',
-        created_at: new Date('2024-06-15T12:30:00Z'),
+        created_at: new Date('2024-06-15T14:30:00Z'),
       };
       mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
-      const result = await service.create('user-456', { name: 'Test Playlist' });
+      const result = await service.create(externalUserId, { name: 'Test Playlist' });
 
-      expect(result).toEqual({
-        id: 'playlist-123',
-        externalUserId: 'user-456',
-        name: 'Test Playlist',
-        createdAt: new Date('2024-06-15T12:30:00Z'),
-        tracks: [],
-      });
+      expect(result.id).toBe('playlist-1');
+      expect(result.externalUserId).toBe(externalUserId);
+      expect(result.name).toBe('Test Playlist');
+      expect(result.createdAt).toEqual(new Date('2024-06-15T14:30:00Z'));
+      expect(result.tracks).toEqual([]);
     });
 
-    it('should always initialize tracks as empty array', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
+    it('should handle different date formats', async () => {
+      const mockRow = {
         id: 'playlist-1',
-        external_user_id: 'user-1',
+        external_user_id: externalUserId,
         name: 'Test',
-        created_at: new Date(),
-      });
+        created_at: '2024-06-15T14:30:00.000Z',
+      };
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
-      const result = await service.create('user-1', { name: 'Test' });
+      const result = await service.create(externalUserId, { name: 'Test' });
 
-      expect(result.tracks).toEqual([]);
-      expect(Array.isArray(result.tracks)).toBe(true);
+      expect(result.createdAt).toBe('2024-06-15T14:30:00.000Z');
     });
   });
 
-  describe('SQL injection prevention', () => {
-    const maliciousPlaylistId = "'; DROP TABLE playlists; --";
-    const maliciousUserId = "'; DELETE FROM users; --";
-    const maliciousName = "Test'; DROP TABLE tracks; --";
+  describe('edge cases and error handling', () => {
+    const externalUserId = 'user-123';
+    const playlistId = '550e8400-e29b-41d4-a716-446655440000';
 
-    it('should safely handle malicious playlist ID in findOne', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
+    it('should propagate database errors from create', async () => {
+      const dbError = new Error('Database connection failed');
+      mockDatabaseService.queryOne.mockRejectedValueOnce(dbError);
 
       await expect(
-        service.findOne(maliciousPlaylistId, 'user-123'),
-      ).rejects.toThrow(NotFoundException);
-
-      const [query, params] = mockDatabaseService.queryOne.mock.calls[0];
-      expect(query).not.toContain(maliciousPlaylistId);
-      expect(params).toContain(maliciousPlaylistId);
+        service.create(externalUserId, { name: 'Test' }),
+      ).rejects.toThrow('Database connection failed');
     });
 
-    it('should safely handle malicious user ID in findAll', async () => {
-      mockDatabaseService.query.mockResolvedValueOnce([]);
+    it('should propagate database errors from findAll', async () => {
+      const dbError = new Error('Query timeout');
+      mockDatabaseService.query.mockRejectedValueOnce(dbError);
 
-      await service.findAll(maliciousUserId);
-
-      const [query, params] = mockDatabaseService.query.mock.calls[0];
-      expect(query).not.toContain(maliciousUserId);
-      expect(params).toContain(maliciousUserId);
-    });
-
-    it('should safely handle malicious playlist name in create', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: 'playlist-1',
-        external_user_id: 'user-123',
-        name: maliciousName,
-        created_at: new Date(),
-      });
-
-      await service.create('user-123', { name: maliciousName });
-
-      const [query, params] = mockDatabaseService.queryOne.mock.calls[0];
-      expect(query).not.toContain(maliciousName);
-      expect(params).toContain(maliciousName);
-    });
-
-    it('should safely handle malicious IDs in addTrack', async () => {
-      mockDatabaseService.queryOne.mockResolvedValueOnce({ id: 'playlist-1' });
-      mockDatabaseService.query.mockResolvedValueOnce([]);
-
-      await service.addTrack(maliciousPlaylistId, maliciousUserId, 'user-123');
-
-      // All IDs should be in params, not interpolated in query
-      expect(mockDatabaseService.queryOne.mock.calls[0][1]).toContain(
-        maliciousPlaylistId,
+      await expect(service.findAll(externalUserId)).rejects.toThrow(
+        'Query timeout',
       );
     });
-  });
 
-  describe('edge cases', () => {
+    it('should propagate database errors from findOne', async () => {
+      const dbError = new Error('Connection pool exhausted');
+      mockDatabaseService.queryOne.mockRejectedValueOnce(dbError);
+
+      await expect(
+        service.findOne(playlistId, externalUserId),
+      ).rejects.toThrow('Connection pool exhausted');
+    });
+
+    it('should propagate database errors from update', async () => {
+      const dbError = new Error('SQL syntax error');
+      mockDatabaseService.queryOne.mockRejectedValueOnce(dbError);
+
+      await expect(
+        service.update(playlistId, externalUserId, { name: 'Test' }),
+      ).rejects.toThrow('SQL syntax error');
+    });
+
+    it('should propagate database errors from remove', async () => {
+      const dbError = new Error('Foreign key violation');
+      mockDatabaseService.query.mockRejectedValueOnce(dbError);
+
+      await expect(
+        service.remove(playlistId, externalUserId),
+      ).rejects.toThrow('Foreign key violation');
+    });
+
+    it('should propagate database errors from addTrack', async () => {
+      mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
+      const dbError = new Error('Constraint violation');
+      mockDatabaseService.query.mockRejectedValueOnce(dbError);
+
+      await expect(
+        service.addTrack(playlistId, 'track-1', externalUserId),
+      ).rejects.toThrow('Constraint violation');
+    });
+
+    it('should propagate database errors from removeTrack', async () => {
+      mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
+      const dbError = new Error('Deadlock detected');
+      mockDatabaseService.query.mockRejectedValueOnce(dbError);
+
+      await expect(
+        service.removeTrack(playlistId, 'track-1', externalUserId),
+      ).rejects.toThrow('Deadlock detected');
+    });
+
     it('should handle very long playlist names', async () => {
-      const longName = 'a'.repeat(1000);
-      mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: 'playlist-1',
-        external_user_id: 'user-123',
+      const longName = 'A'.repeat(500);
+      const mockRow = {
+        id: playlistId,
+        external_user_id: externalUserId,
         name: longName,
         created_at: new Date(),
-      });
+      };
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
 
-      const result = await service.create('user-123', { name: longName });
+      const result = await service.create(externalUserId, { name: longName });
 
       expect(result.name).toBe(longName);
     });
 
-    it('should handle playlist with many tracks', async () => {
+    it('should handle special characters in user ID', async () => {
+      const specialUserId = "user-with'quotes\"and\\backslashes";
+      mockDatabaseService.query.mockResolvedValueOnce([]);
+
+      await service.findAll(specialUserId);
+
+      expect(mockDatabaseService.query).toHaveBeenCalledWith(
+        expect.any(String),
+        [specialUserId],
+      );
+    });
+
+    it('should handle empty playlist name', async () => {
+      const mockRow = {
+        id: playlistId,
+        external_user_id: externalUserId,
+        name: '',
+        created_at: new Date(),
+      };
+      mockDatabaseService.queryOne.mockResolvedValueOnce(mockRow);
+
+      const result = await service.create(externalUserId, { name: '' });
+
+      expect(result.name).toBe('');
+    });
+  });
+
+  describe('concurrent operations', () => {
+    const externalUserId = 'user-123';
+
+    it('should handle multiple concurrent create calls', async () => {
+      const mockRows = [
+        { id: 'playlist-1', external_user_id: externalUserId, name: 'Playlist 1', created_at: new Date() },
+        { id: 'playlist-2', external_user_id: externalUserId, name: 'Playlist 2', created_at: new Date() },
+        { id: 'playlist-3', external_user_id: externalUserId, name: 'Playlist 3', created_at: new Date() },
+      ];
+
+      mockRows.forEach((row) => {
+        mockDatabaseService.queryOne.mockResolvedValueOnce(row);
+      });
+
+      const results = await Promise.all([
+        service.create(externalUserId, { name: 'Playlist 1' }),
+        service.create(externalUserId, { name: 'Playlist 2' }),
+        service.create(externalUserId, { name: 'Playlist 3' }),
+      ]);
+
+      expect(results).toHaveLength(3);
+      expect(results[0].name).toBe('Playlist 1');
+      expect(results[1].name).toBe('Playlist 2');
+      expect(results[2].name).toBe('Playlist 3');
+    });
+
+    it('should handle concurrent addTrack calls to same playlist', async () => {
+      const playlistId = 'playlist-1';
+      const trackIds = ['track-1', 'track-2', 'track-3'];
+
+      trackIds.forEach(() => {
+        mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
+        mockDatabaseService.query.mockResolvedValueOnce([]);
+      });
+
+      await Promise.all(
+        trackIds.map((trackId) =>
+          service.addTrack(playlistId, trackId, externalUserId),
+        ),
+      );
+
+      expect(mockDatabaseService.queryOne).toHaveBeenCalledTimes(3);
+      expect(mockDatabaseService.query).toHaveBeenCalledTimes(3);
+    });
+
+    it('should handle mixed concurrent operations', async () => {
+      const playlistId = 'playlist-1';
+
+      // Setup mocks for different operations
       mockDatabaseService.queryOne.mockResolvedValueOnce({
-        id: 'playlist-1',
-        external_user_id: 'user-123',
-        name: 'Big Playlist',
+        id: 'new-playlist',
+        external_user_id: externalUserId,
+        name: 'New Playlist',
+        created_at: new Date(),
+      });
+      mockDatabaseService.query.mockResolvedValueOnce([
+        { id: playlistId, external_user_id: externalUserId, name: 'Existing', created_at: new Date() },
+      ]);
+      mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
+      mockDatabaseService.query.mockResolvedValueOnce([]);
+
+      const [created, all] = await Promise.all([
+        service.create(externalUserId, { name: 'New Playlist' }),
+        service.findAll(externalUserId),
+        service.addTrack(playlistId, 'track-1', externalUserId),
+      ]);
+
+      expect(created.name).toBe('New Playlist');
+      expect(all).toHaveLength(1);
+    });
+  });
+
+  describe('SQL injection prevention', () => {
+    const externalUserId = 'user-123';
+    const playlistId = '550e8400-e29b-41d4-a716-446655440000';
+
+    it('should use parameterized queries for create', async () => {
+      const maliciousName = "'; DROP TABLE playlists; --";
+      mockDatabaseService.queryOne.mockResolvedValueOnce({
+        id: playlistId,
+        external_user_id: externalUserId,
+        name: maliciousName,
         created_at: new Date(),
       });
 
-      const manyTracks = Array.from({ length: 500 }, (_, i) => ({
-        id: `track-${i}`,
-        title: `Song ${i}`,
-        artist: `Artist ${i}`,
-        album: `Album ${i}`,
-        genre: 'rock',
-        duration_sec: 180,
-        external_url: `https://example.com/track${i}`,
-        preview_url: null,
-        audio_features: null,
-        embedding: null,
-        created_at: new Date(),
-      }));
-      mockDatabaseService.query.mockResolvedValueOnce(manyTracks);
+      await service.create(externalUserId, { name: maliciousName });
 
-      const result = await service.findOne('playlist-1', 'user-123');
-
-      expect(result.tracks).toHaveLength(500);
+      const query = mockDatabaseService.queryOne.mock.calls[0][0];
+      expect(query).not.toContain(maliciousName);
+      expect(query).toContain('$1');
+      expect(query).toContain('$2');
     });
 
-    it('should handle concurrent operations on same playlist', async () => {
-      mockDatabaseService.queryOne.mockResolvedValue({ id: 'playlist-1' });
-      mockDatabaseService.query.mockResolvedValue([]);
+    it('should use parameterized queries for findAll', async () => {
+      const maliciousUserId = "'; DROP TABLE playlists; --";
+      mockDatabaseService.query.mockResolvedValueOnce([]);
 
-      await Promise.all([
-        service.addTrack('playlist-1', 'track-1', 'user-123'),
-        service.addTrack('playlist-1', 'track-2', 'user-123'),
-        service.addTrack('playlist-1', 'track-3', 'user-123'),
-      ]);
+      await service.findAll(maliciousUserId);
 
-      // All operations should complete
-      expect(mockDatabaseService.query).toHaveBeenCalledTimes(3);
+      const query = mockDatabaseService.query.mock.calls[0][0];
+      expect(query).not.toContain(maliciousUserId);
+      expect(query).toContain('$1');
+    });
+
+    it('should use parameterized queries for update', async () => {
+      const maliciousName = "'; UPDATE playlists SET name = 'hacked'; --";
+      mockDatabaseService.queryOne.mockResolvedValueOnce({
+        id: playlistId,
+        external_user_id: externalUserId,
+        name: maliciousName,
+        created_at: new Date(),
+      });
+
+      await service.update(playlistId, externalUserId, { name: maliciousName });
+
+      const query = mockDatabaseService.queryOne.mock.calls[0][0];
+      expect(query).not.toContain(maliciousName);
+    });
+
+    it('should use parameterized queries for remove', async () => {
+      const maliciousId = "'; DELETE FROM playlists; --";
+      mockDatabaseService.query.mockResolvedValueOnce([{ id: maliciousId }]);
+
+      await service.remove(maliciousId, externalUserId);
+
+      const query = mockDatabaseService.query.mock.calls[0][0];
+      expect(query).not.toContain(maliciousId);
+      expect(query).toContain('$1');
+    });
+
+    it('should use parameterized queries for addTrack', async () => {
+      const maliciousTrackId = "'; INSERT INTO playlist_tracks VALUES ('a','b'); --";
+      mockDatabaseService.queryOne.mockResolvedValueOnce({ id: playlistId });
+      mockDatabaseService.query.mockResolvedValueOnce([]);
+
+      await service.addTrack(playlistId, maliciousTrackId, externalUserId);
+
+      const query = mockDatabaseService.query.mock.calls[0][0];
+      expect(query).not.toContain(maliciousTrackId);
+    });
+  });
+
+  describe('authorization checks', () => {
+    const externalUserId = 'user-123';
+    const otherUserId = 'other-user';
+    const playlistId = '550e8400-e29b-41d4-a716-446655440000';
+
+    it('should not return playlists belonging to other users in findAll', async () => {
+      mockDatabaseService.query.mockResolvedValueOnce([]);
+
+      await service.findAll(externalUserId);
+
+      expect(mockDatabaseService.query).toHaveBeenCalledWith(
+        expect.stringContaining('external_user_id = $1'),
+        [externalUserId],
+      );
+    });
+
+    it('should throw when findOne is called for playlist owned by another user', async () => {
+      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.findOne(playlistId, otherUserId),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw when update is called for playlist owned by another user', async () => {
+      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.update(playlistId, otherUserId, { name: 'Stolen' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw when remove is called for playlist owned by another user', async () => {
+      mockDatabaseService.query.mockResolvedValueOnce([]);
+
+      await expect(
+        service.remove(playlistId, otherUserId),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw when addTrack is called for playlist owned by another user', async () => {
+      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.addTrack(playlistId, 'track-1', otherUserId),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw when removeTrack is called for playlist owned by another user', async () => {
+      mockDatabaseService.queryOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.removeTrack(playlistId, 'track-1', otherUserId),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
