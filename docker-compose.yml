@@ -87,10 +87,36 @@ services:
       DATABASE_URL: postgresql+psycopg2://music_user:music_pass_dev@postgres:5432/music_rec
       REDIS_URL: redis://redis:6379
       SEQUENTIAL_MODEL_PATH: /app/apps/ml/data/model.pt
+      FEAST_REPO_PATH: /ml_pipeline/feature_store/feast_repo
+      FEAST_REDIS_HOST: redis
+      FEAST_REDIS_PORT: 6379
     ports:
       - "8000:8000"
     volumes:
       - ./apps/ml:/app/apps/ml
+      - ./ml_pipeline:/ml_pipeline
+
+  mlpipeline:
+    build:
+      context: .
+      dockerfile: ./ml_pipeline/Dockerfile
+    container_name: music-rec-mlpipeline
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://music_user:music_pass_dev@postgres:5432/music_rec
+      FEAST_REDIS_HOST: redis
+      FEAST_REDIS_PORT: 6379
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - ./ml_pipeline:/ml_pipeline
+      - ./apps/ml/data:/app/apps/ml/data
+    command: /bin/bash -c "echo 'ML Pipeline ready. Use docker exec to run training scripts.'"
 
   web:
     build:
