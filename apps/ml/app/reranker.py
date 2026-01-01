@@ -27,7 +27,10 @@ class Reranker:
         self.model_name = "heuristic-seq"
         self.torch_available = False
         self.model_loaded = False
+        self.feast_enabled = False
+        self.feast_store = None
 
+        # Initialize PyTorch model
         try:
             import torch  # type: ignore
 
@@ -35,12 +38,47 @@ class Reranker:
             # Lazy load: only if file exists
             if os.path.exists(self.model_path):
                 self._torch = torch
-                self._model = torch.load(self.model_path, map_location="cpu")
-                self.model_loaded = True
-                self.model_name = "sasrec"
-        except Exception:
+                self._model_data = torch.load(self.model_path, map_location="cpu")
+
+                # Check if it's new format with model state dict
+                if isinstance(self._model_data, dict) and 'model_state_dict' in self._model_data:
+                    # Load SASRec model architecture
+                    from ml_pipeline.train_transformer import SASRecModel
+
+                    hyperparams = self._model_data['hyperparameters']
+                    self._model = SASRecModel(
+                        num_items=self._model_data['num_items'],
+                        **hyperparams
+                    )
+                    self._model.load_state_dict(self._model_data['model_state_dict'])
+                    self._model.eval()
+
+                    self.track_to_idx = self._model_data['track_to_idx']
+                    self.idx_to_track = self._model_data['idx_to_track']
+                    self.model_loaded = True
+                    self.model_name = "sasrec-transformer"
+                else:
+                    # Legacy format
+                    self._model = self._model_data
+                    self.model_loaded = True
+                    self.model_name = "sasrec"
+        except Exception as e:
+            print(f"Warning: Failed to load PyTorch model: {e}")
             self.torch_available = False
             self.model_loaded = False
+
+        # Initialize Feast Feature Store
+        try:
+            from feast import FeatureStore
+
+            feast_repo = os.getenv("FEAST_REPO_PATH", "/ml_pipeline/feature_store/feast_repo")
+            if os.path.exists(feast_repo):
+                self.feast_store = FeatureStore(repo_path=feast_repo)
+                self.feast_enabled = True
+                print(f"✓ Feast Feature Store initialized from {feast_repo}")
+        except Exception as e:
+            print(f"Warning: Feast not available: {e}")
+            self.feast_enabled = False
 
     def rerank(
         self,
@@ -60,16 +98,128 @@ class Reranker:
         if interest_graph is None:
             interest_graph = self._fetch_interest_graph(external_user_id)
 
-        if self.model_loaded:
-            # Placeholder: real SASRec inference requires mapping track ids -> indices
-            # We keep this branch for future integration but do not block execution.
-            scores = self._score_heuristic(meta, candidate_track_ids, context, recent_sequence, interest_graph)
+        # Fetch features from Feature Store if available
+        feast_features = None
+        if self.feast_enabled:
+            feast_features = self._fetch_feast_features(external_user_id, candidate_track_ids, context)
+
+        # Use Sequential Transformer if available
+        if self.model_loaded and self.model_name == "sasrec-transformer":
+            scores = self._score_with_transformer(
+                meta, candidate_track_ids, context, recent_sequence, interest_graph, feast_features
+            )
         else:
-            scores = self._score_heuristic(meta, candidate_track_ids, context, recent_sequence, interest_graph)
+            # Fallback to heuristic scoring (enhanced with Feast features if available)
+            scores = self._score_heuristic(
+                meta, candidate_track_ids, context, recent_sequence, interest_graph, feast_features
+            )
 
         # Return sorted
         items = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
         return items[:limit]
+
+    def _fetch_feast_features(
+        self,
+        user_id: str,
+        track_ids: List[str],
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Fetch features from Feast Feature Store"""
+        if not self.feast_enabled or not self.feast_store:
+            return {}
+
+        try:
+            from datetime import datetime
+
+            # Prepare entity rows
+            entity_rows = [{"external_user_id": user_id}]
+
+            # User features
+            user_features = self.feast_store.get_online_features(
+                features=[
+                    "user_listening_stats:play_count_7d",
+                    "user_listening_stats:like_rate_7d",
+                    "user_listening_stats:skip_rate_7d",
+                    "user_audio_preferences:avg_energy",
+                    "user_audio_preferences:avg_valence",
+                    "user_audio_preferences:avg_danceability",
+                ],
+                entity_rows=entity_rows
+            ).to_dict()
+
+            # Track features (for each candidate)
+            track_features = {}
+            for track_id in track_ids[:20]:  # Limit to avoid too many requests
+                track_entity = [{"track_id": track_id}]
+                try:
+                    track_feat = self.feast_store.get_online_features(
+                        features=[
+                            "track_audio_features:energy",
+                            "track_audio_features:valence",
+                            "track_audio_features:danceability",
+                            "track_popularity:popularity_score",
+                        ],
+                        entity_rows=track_entity
+                    ).to_dict()
+                    track_features[track_id] = track_feat
+                except:
+                    pass
+
+            return {
+                "user": user_features,
+                "tracks": track_features
+            }
+
+        except Exception as e:
+            print(f"Warning: Failed to fetch Feast features: {e}")
+            return {}
+
+    def _score_with_transformer(
+        self,
+        meta: Dict[str, Dict[str, Any]],
+        candidate_ids: List[str],
+        context: Optional[Dict[str, Any]],
+        recent_sequence: List[str],
+        interest_graph: Optional[Dict[str, Any]],
+        feast_features: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, float]:
+        """Score using SASRec Sequential Transformer"""
+
+        # Convert recent sequence to indices
+        seq_indices = []
+        for track_id in recent_sequence[-50:]:  # Last 50 items
+            if track_id in self.track_to_idx:
+                seq_indices.append(self.track_to_idx[track_id])
+
+        if len(seq_indices) < 3:
+            # Fallback to heuristic if sequence too short
+            return self._score_heuristic(meta, candidate_ids, context, recent_sequence, interest_graph, feast_features)
+
+        # Get transformer predictions
+        predictions = self._model.predict_next(seq_indices, top_k=100)
+
+        # Map predictions to track IDs
+        transformer_scores = {}
+        for idx, score in predictions:
+            if idx in self.idx_to_track:
+                track_id = self.idx_to_track[idx]
+                transformer_scores[track_id] = score
+
+        # Combine with heuristic scores
+        heuristic_scores = self._score_heuristic(meta, candidate_ids, context, recent_sequence, interest_graph, feast_features)
+
+        # Hybrid scoring: 70% transformer, 30% heuristic
+        final_scores = {}
+        for track_id in candidate_ids:
+            transformer_score = transformer_scores.get(track_id, 0.0)
+            heuristic_score = heuristic_scores.get(track_id, 0.0)
+
+            # Normalize heuristic to [0, 1]
+            normalized_heuristic = min(1.0, heuristic_score)
+
+            final_scores[track_id] = 0.7 * transformer_score + 0.3 * normalized_heuristic
+
+        return final_scores
 
     def train(self, user_id: Optional[str] = None, epochs: int = 2) -> Dict[str, Any]:
         """تدريب SASRec-like (هيكل فقط). للتنفيذ الحقيقي: فعّل INSTALL_TORCH=1."""
@@ -139,6 +289,7 @@ class Reranker:
         context: Optional[Dict[str, Any]],
         recent_sequence: List[str],
         interest_graph: Optional[Dict[str, Any]],
+        feast_features: Optional[Dict[str, Any]] = None
     ) -> Dict[str, float]:
         # Base score: inverse of original rank (candidate order)
         base = {tid: 1.0 / (idx + 1) for idx, tid in enumerate(candidate_ids)}
