@@ -1,0 +1,13 @@
+{
+  "name": "@music-rec/ml",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Python ML service (Sequential Transformer reranker + Feature Store + Interest Graph helpers)",
+  "scripts": {
+    "dev": "echo 'Run via docker-compose (ml service) or: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload'",
+    "build": "echo 'Python service - build handled by Dockerfile'",
+    "test": "echo 'Python tests are optional for now'",
+    "lint": "echo 'Python lint optional'",
+    "clean": "rm -rf .venv __pycache__ .pytest_cache"
+  }
+}

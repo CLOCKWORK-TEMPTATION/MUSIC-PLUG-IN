@@ -1,0 +1,5 @@
+# Optional heavy dependencies for Sequential Transformer training/inference
+# Install only if you actually want to train/run SASRec-like model.
+# In Docker: pass build arg INSTALL_TORCH=1
+
+torch==2.5.1

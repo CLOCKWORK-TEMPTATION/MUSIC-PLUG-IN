@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: music-rec-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: music_rec
+      POSTGRES_USER: music_user
+      POSTGRES_PASSWORD: music_pass_dev
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./apps/api/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U music_user -d music_rec"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: music-rec-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile
+    container_name: music-rec-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://music_user:music_pass_dev@postgres:5432/music_rec
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      JWKS_URI: ${JWKS_URI:-}
+      JWT_ISSUER: ${JWT_ISSUER:-the-copy-platform}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-music-recommendation}
+      DEV_USER_ID: ${DEV_USER_ID:-dev-user-123}
+      CORS_ORIGIN: http://localhost:3000
+      ML_SERVICE_URL: http://ml:8000
+      RECSYS_RERANKER_ENABLED: "true"
+      RECSYS_INTEREST_GRAPH_ENABLED: "true"
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./apps/api:/app/apps/api
+      - ./packages:/app/packages
+      - /app/node_modules
+      - /app/apps/api/node_modules
+    command: npm run dev
+
+  ml:
+    build:
+      context: .
+      dockerfile: ./apps/ml/Dockerfile
+      args:
+        INSTALL_TORCH: ${ML_INSTALL_TORCH:-0}
+    container_name: music-rec-ml
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://music_user:music_pass_dev@postgres:5432/music_rec
+      REDIS_URL: redis://redis:6379
+      SEQUENTIAL_MODEL_PATH: /app/apps/ml/data/model.pt
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/ml:/app/apps/ml
+
+  web:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    container_name: music-rec-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_WS_URL: ws://localhost:3001
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./packages:/app/packages
+      - /app/node_modules
+      - /app/apps/web/node_modules
+      - /app/apps/web/.next
+    command: npm run dev
+
+volumes:
+  postgres_data:
+  redis_data:
