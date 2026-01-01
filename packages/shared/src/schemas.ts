@@ -1,13 +1,14 @@
 import { z } from 'zod';
+import { EventType, Mood, Activity, TimeBucket } from './types';
 
-// Enums
-export const EventTypeSchema = z.enum(['PLAY', 'SKIP', 'LIKE', 'DISLIKE', 'ADD_TO_PLAYLIST']);
+// Enums - using nativeEnum to ensure type compatibility with TypeScript enums
+export const EventTypeSchema = z.nativeEnum(EventType);
 
-export const MoodSchema = z.enum(['CALM', 'HAPPY', 'SAD', 'ENERGETIC']);
+export const MoodSchema = z.nativeEnum(Mood);
 
-export const ActivitySchema = z.enum(['WORK', 'EXERCISE', 'RELAX', 'PARTY']);
+export const ActivitySchema = z.nativeEnum(Activity);
 
-export const TimeBucketSchema = z.enum(['MORNING', 'AFTERNOON', 'EVENING', 'NIGHT']);
+export const TimeBucketSchema = z.nativeEnum(TimeBucket);
 
 // Context Schema
 export const InteractionContextSchema = z.object({
