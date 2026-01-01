@@ -21,8 +21,11 @@
     "db:seed": "cd apps/api && npm run seed"
   },
   "devDependencies": {
-    "turbo": "^2.0.0",
+    "@types/jest": "^30.0.0",
+    "jest": "^30.2.0",
     "prettier": "^3.1.0",
+    "ts-jest": "^29.4.6",
+    "turbo": "^2.0.0",
     "typescript": "^5.3.0"
   },
   "engines": {
