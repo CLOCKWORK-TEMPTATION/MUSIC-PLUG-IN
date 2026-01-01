@@ -1,0 +1,32 @@
+{
+  "name": "music-recommendation-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Music recommendation system for THE COPY platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "db:migrate": "cd apps/api && npm run migrate",
+    "db:seed": "cd apps/api && npm run seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
