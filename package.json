@@ -18,7 +18,8 @@
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
     "db:migrate": "cd apps/api && npm run migrate",
-    "db:seed": "cd apps/api && npm run seed"
+    "db:seed": "cd apps/api && npm run seed",
+    "production-report": "node scripts/generate-production-report.js"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

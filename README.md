@@ -19,6 +19,9 @@ This system provides real-time, personalized music recommendations based on:
 - ✅ **Dual Authentication**: Supports JWT (THE COPY platform) and internal gateway headers
 - ✅ **Scalable Architecture**: Monorepo with microservices-ready structure
 - ✅ **Performance Optimized**: Redis caching, pgvector HNSW indexing, <300ms response time
+- ✅ **Production Readiness**: Automated assessment tool for deployment evaluation
+
+> 📊 **New**: Generate a comprehensive production readiness report with `npm run production-report`. See [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md) for details.
 
 ## 🏗️ Architecture
 
@@ -476,6 +479,9 @@ npm run docker:logs    # View logs
 # Database
 npm run db:migrate     # Run migrations
 npm run db:seed        # Seed data
+
+# Production Readiness
+npm run production-report  # Generate production readiness assessment
 ```
 
 ## 📝 Design Decisions
