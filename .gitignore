@@ -41,3 +41,7 @@ yarn-error.log*
 
 # Docker
 .docker/
+
+# Production Readiness Reports
+production-readiness-report.json
+analysis-data.json
